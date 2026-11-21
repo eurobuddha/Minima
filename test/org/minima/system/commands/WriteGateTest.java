@@ -226,13 +226,16 @@ public class WriteGateTest {
 			assertTrue("a non-admin caller overwrote an existing file: "+res, String.valueOf(res.get("error")).contains("only creates new files"));
 			assertEquals("ADMIN", new String(java.nio.file.Files.readAllBytes(handle.toPath())));
 			
-			//a NEW plain name: created
-			assertTrue(run("0xFF", "peers action:publish file:mine-new.txn").toString(), (boolean) run("0xFF", "peers action:publish file:mine-new2.txn").get("status"));
+			//a NEW plain name: created (txnexport, open on this line - peers publish needs a running network here)
+			CommandRunner.getRunner().runMultiCommand("0x00", "txncreate id:retrytxn");
+			res = run("0xFF", "txnexport id:retrytxn file:mine-new.txn");
+			assertTrue(res.toString(), (boolean) res.get("status"));
+			assertTrue(new java.io.File(base, "mine-new.txn").length() > 0);
+			res = run("0xFF", "txnexport id:retrytxn file:ms_pay_0123.txn");
+			assertTrue("a non-admin caller overwrote an existing file: "+res, String.valueOf(res.get("error")).contains("only creates new files"));
+			assertEquals("ADMIN", new String(java.nio.file.Files.readAllBytes(handle.toPath())));
 			
 			//ADMIN rewrites, as the shipped retry does (miniMall / NFT: the same handle.txn again)
-			assertTrue((boolean) run("0x00", "peers action:publish file:ms_pay_0123.txn").get("status"));
-			assertTrue((boolean) run("0x00", "peers action:publish file:ms_pay_0123.txn").get("status"));
-			CommandRunner.getRunner().runMultiCommand("0x00", "txncreate id:retrytxn");
 			assertTrue((boolean) run("0x00", "txnexport id:retrytxn file:nft_send_0123.txn").get("status"));
 			assertTrue((boolean) run("0x00", "txnexport id:retrytxn file:nft_send_0123.txn").get("status"));
 		}finally {
