@@ -14,4 +14,10 @@ public abstract class Server {
 	}
     
 	public abstract void shutdown();
+	
+	/** Is the server socket open and accepting? */
+	public abstract boolean isListening();
+	
+	/** Why the server did not start, or null */
+	public abstract String getStartError();
 }

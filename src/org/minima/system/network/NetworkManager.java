@@ -221,7 +221,8 @@ public class NetworkManager {
 			if(GeneralParams.RPC_SSL) {
 				
 				//Start The RPC server
-				mRPCServer = new HTTPSServer(GeneralParams.RPC_PORT) {
+				//SECURITY: loopback unless -rpcbind - it was every interface, an admin RPC on the LAN
+				mRPCServer = new HTTPSServer(GeneralParams.RPC_PORT, GeneralParams.RPC_BIND_HOST) {
 					
 					@Override
 					public Runnable getSocketHandler(SSLSocket zSocket) {
@@ -232,7 +233,7 @@ public class NetworkManager {
 			}else {
 				
 				//Start The RPC server
-				mRPCServer = new HTTPServer(GeneralParams.RPC_PORT) {
+				mRPCServer = new HTTPServer(GeneralParams.RPC_PORT, GeneralParams.RPC_BIND_HOST) {
 					
 					@Override
 					public Runnable getSocketHandler(Socket zSocket) {
@@ -241,6 +242,16 @@ public class NetworkManager {
 				};				
 			}
 		}
+	}
+	
+	/** Is the RPC server really listening (it can be enabled and still down: bad -rpcbind, port in use) */
+	public boolean isRPCListening() {
+		return mRPCServer != null && mRPCServer.isListening();		//HTTP or SSL
+	}
+	
+	/** Why the RPC server did not start, or null */
+	public String getRPCStartError() {
+		return mRPCServer == null ? null : mRPCServer.getStartError();
 	}
 	
 	public void stopRPC() {

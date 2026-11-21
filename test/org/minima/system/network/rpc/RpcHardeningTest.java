@@ -65,6 +65,7 @@ public class RpcHardeningTest {
 		mainInstance.set(null, main);
 
 		GeneralParams.RPC_PORT 			= freePort();
+		GeneralParams.RPC_BIND_HOST 	= "127.0.0.1";
 		GeneralParams.RPC_ENABLED 		= false;
 		GeneralParams.RPC_AUTHENTICATE 	= false;
 		GeneralParams.RPC_PASSWORD 		= "none";
@@ -77,6 +78,7 @@ public class RpcHardeningTest {
 		GeneralParams.RPC_ENABLED 		= false;
 		GeneralParams.RPC_AUTHENTICATE 	= false;
 		GeneralParams.RPC_PASSWORD 		= "none";
+		GeneralParams.RPC_BIND_HOST 	= "127.0.0.1";
 	}
 
 	static JSONObject run(String zCommand) {
@@ -112,8 +114,78 @@ public class RpcHardeningTest {
 		assertEquals("first", GeneralParams.RPC_PASSWORD);
 	}
 	
+	@Test
+	public void rpcServerBindsLoopbackByDefault() throws Exception {
+		network.startRPC();
+		Field f = NetworkManager.class.getDeclaredField("mRPCServer");
+		f.setAccessible(true);
+		HTTPServer server = (HTTPServer) f.get(network);
+		for(int i=0;i<50 && server.mServerSocket == null;i++) {
+			Thread.sleep(100);
+		}
+		assertTrue("the RPC listens on "+server.mServerSocket.getInetAddress()+", not loopback",
+				server.mServerSocket.getInetAddress().isLoopbackAddress());
+	}
 	
+	/** Round-5 review: rpc enable:true ssl:true - the SSL RPC is up, and "rpc" must say listening:true */
+	@Test
+	public void sslRpcReportsListening() throws Exception {
+		String olddata = GeneralParams.DATA_FOLDER;
+		boolean oldssl = GeneralParams.RPC_SSL;
+		java.io.File dir = java.nio.file.Files.createTempDirectory("rpc-ssl").toFile();
+		GeneralParams.DATA_FOLDER = dir.getAbsolutePath();
+		MinimaDB.getDB().setAllowSaveState(false);
+		try {
+			org.minima.utils.ssl.SSLManager.makeKeyFile();
+			GeneralParams.RPC_SSL = true;
+			network.startRPC();
+			boolean listening = false;
+			for(int i=0;i<50 && !listening;i++) {
+				listening = network.isRPCListening();
+				Thread.sleep(100);
+			}
+			assertTrue("the SSL RPC is up but not reported as listening", listening);
+			assertEquals(null, network.getRPCStartError());
+			network.stopRPC();
+			assertFalse(network.isRPCListening());
+		}finally {
+			network.stopRPC();
+			GeneralParams.RPC_SSL = oldssl;
+			GeneralParams.DATA_FOLDER = olddata;
+			MinimaDB.getDB().setAllowSaveState(true);
+			org.minima.utils.MiniFile.deleteFileOrFolder(dir.getAbsolutePath(), dir);
+		}
+	}
 	
+	/** Round-6 review: an SSL server whose accept loop dies is not reported as listening (its socket is closed) */
+	@Test
+	public void deadSslAcceptLoopIsNotListening() throws Exception {
+		String olddata = GeneralParams.DATA_FOLDER;
+		java.io.File dir = java.nio.file.Files.createTempDirectory("rpc-ssl-dead").toFile();
+		GeneralParams.DATA_FOLDER = dir.getAbsolutePath();
+		MinimaDB.getDB().setAllowSaveState(false);
+		HTTPSServer server = null;
+		try {
+			org.minima.utils.ssl.SSLManager.makeKeyFile();
+			int port = freePort();
+			server = new HTTPSServer(port, "127.0.0.1") {
+				@Override
+				public Runnable getSocketHandler(javax.net.ssl.SSLSocket zSocket) {
+					throw new IllegalStateException("handler failed");
+				}
+			};
+			for(int i=0;i<50 && !server.isListening();i++) Thread.sleep(100);
+			assertTrue(server.isListening());
+			new Socket(InetAddress.getLoopbackAddress(), port).close();		//one accept: the handler throws
+			for(int i=0;i<50 && server.isListening();i++) Thread.sleep(100);
+			assertFalse("a dead accept loop is still reported as listening", server.isListening());
+		}finally {
+			if(server != null) server.shutdown();
+			GeneralParams.DATA_FOLDER = olddata;
+			MinimaDB.getDB().setAllowSaveState(true);
+			org.minima.utils.MiniFile.deleteFileOrFolder(dir.getAbsolutePath(), dir);
+		}
+	}
 	
 	/** One POST through a real CMDHandler on a loopback socket pair; returns the whole HTTP reply */
 	static String post(String zUser, String zPassword, String zCommand) throws Exception {
@@ -186,6 +258,15 @@ public class RpcHardeningTest {
 	}
 	
 	
+	@Test
+	public void rpcThatCannotListenIsReported() {
+		//192.0.2.1 (TEST-NET) is no address of this machine: the bind fails and the RPC stays down
+		GeneralParams.RPC_BIND_HOST = "192.0.2.1";
+		JSONObject res = run("rpc enable:true password:firstpw");
+		JSONObject rpc = (JSONObject) res.get("response");
+		assertEquals("the reply did not say the RPC is down: "+rpc, false, rpc.get("listening"));
+		assertTrue(String.valueOf(rpc.get("error")).contains("Cannot listen"));
+	}
 	
 	@Test
 	public void blankPasswordChangesNothing() throws Exception {
