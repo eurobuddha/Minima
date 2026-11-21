@@ -246,12 +246,12 @@ public class NetworkManager {
 	
 	/** Is the RPC server really listening (it can be enabled and still down: bad -rpcbind, port in use) */
 	public boolean isRPCListening() {
-		return mRPCServer instanceof HTTPServer && ((HTTPServer) mRPCServer).isListening();
+		return mRPCServer != null && mRPCServer.isListening();		//HTTP or SSL
 	}
 	
 	/** Why the RPC server did not start, or null */
 	public String getRPCStartError() {
-		return mRPCServer instanceof HTTPServer ? ((HTTPServer) mRPCServer).getStartError() : null;
+		return mRPCServer == null ? null : mRPCServer.getStartError();
 	}
 	
 	public void stopRPC() {

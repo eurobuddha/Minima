@@ -127,6 +127,36 @@ public class RpcHardeningTest {
 				server.mServerSocket.getInetAddress().isLoopbackAddress());
 	}
 	
+	/** Round-5 review: rpc enable:true ssl:true - the SSL RPC is up, and "rpc" must say listening:true */
+	@Test
+	public void sslRpcReportsListening() throws Exception {
+		String olddata = GeneralParams.DATA_FOLDER;
+		boolean oldssl = GeneralParams.RPC_SSL;
+		java.io.File dir = java.nio.file.Files.createTempDirectory("rpc-ssl").toFile();
+		GeneralParams.DATA_FOLDER = dir.getAbsolutePath();
+		MinimaDB.getDB().setAllowSaveState(false);
+		try {
+			org.minima.utils.ssl.SSLManager.makeKeyFile();
+			GeneralParams.RPC_SSL = true;
+			network.startRPC();
+			boolean listening = false;
+			for(int i=0;i<50 && !listening;i++) {
+				listening = network.isRPCListening();
+				Thread.sleep(100);
+			}
+			assertTrue("the SSL RPC is up but not reported as listening", listening);
+			assertEquals(null, network.getRPCStartError());
+			network.stopRPC();
+			assertFalse(network.isRPCListening());
+		}finally {
+			network.stopRPC();
+			GeneralParams.RPC_SSL = oldssl;
+			GeneralParams.DATA_FOLDER = olddata;
+			MinimaDB.getDB().setAllowSaveState(true);
+			org.minima.utils.MiniFile.deleteFileOrFolder(dir.getAbsolutePath(), dir);
+		}
+	}
+	
 	/** One POST through a real CMDHandler on a loopback socket pair; returns the whole HTTP reply */
 	static String post(String zUser, String zPassword, String zCommand) throws Exception {
 		try(ServerSocket ss = new ServerSocket(0, 5, InetAddress.getLoopbackAddress());

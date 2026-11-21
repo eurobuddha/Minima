@@ -20,7 +20,10 @@ public abstract class HTTPSServer extends Server implements Runnable {
     
 	private boolean mShutdown 	= false;
     
-    SSLServerSocket mSSLServerSocket = null;
+    volatile SSLServerSocket mSSLServerSocket = null;
+    
+    /** Why the server did not start, or null */
+    volatile String mStartError = null;
     
     /** "" = every interface; else the one address to bind (the RPC uses GeneralParams.RPC_BIND_HOST) */
     String mBindHost = "";
@@ -86,6 +89,11 @@ public abstract class HTTPSServer extends Server implements Runnable {
     @Override
     public void run(){
         SSLContext sslContext = this.createSSLContext();
+        if(sslContext == null) {
+        	mStartError = "Cannot listen on "+(mBindHost.isEmpty() ? "*" : mBindHost)+":"+mPort+" - no SSL keystore";
+        	MinimaLogger.log("SSL Server @ Port "+mPort+" not started: "+mStartError);
+        	return;
+        }
          
         try{
             // Create server socket factory
@@ -114,13 +122,27 @@ public abstract class HTTPSServer extends Server implements Runnable {
             }
         
         } catch (BindException e) {
-			//Socket shut down..
-			MinimaLogger.log("SSL Server @ Port "+mPort+" already in use!.. restart required..");
+			//Could not bind - port in use, or an address this machine does not have
+			mStartError = "Cannot listen on "+(mBindHost.isEmpty() ? "*" : mBindHost)+":"+mPort+" - "+e.getMessage();
+			MinimaLogger.log("SSL Server @ Port "+mPort+" not started: "+mStartError);
 		
         } catch (Exception ex){
+        	if(mSSLServerSocket == null) {
+        		mStartError = "Cannot listen on "+(mBindHost.isEmpty() ? "*" : mBindHost)+":"+mPort+" - "+ex;
+        	}
         	if(!mShutdown) {
         		MinimaLogger.log(ex);
         	}
         }
+    }
+    
+    @Override
+    public boolean isListening() {
+    	return !mShutdown && mSSLServerSocket != null && !mSSLServerSocket.isClosed();
+    }
+    
+    @Override
+    public String getStartError() {
+    	return mStartError;
     }
 }

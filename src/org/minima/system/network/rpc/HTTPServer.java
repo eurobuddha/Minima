@@ -106,12 +106,12 @@ public abstract class HTTPServer extends Server implements Runnable{
 		}
 	}
 	
-	/** Is the server socket open and accepting? */
+	@Override
 	public boolean isListening() {
 		return mServerSocket != null && !mServerSocket.isClosed();
 	}
 	
-	/** Why the server did not start, or null */
+	@Override
 	public String getStartError() {
 		return mStartError;
 	}
