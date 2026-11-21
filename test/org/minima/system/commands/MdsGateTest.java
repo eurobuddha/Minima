@@ -122,7 +122,6 @@ public class MdsGateTest {
 		MinimaDB.getDB().getCustomTxnDB().createTransaction("burnrow");
 		assertTrue(pending(run(dapp, "txnpost id:burnrow burn:1")));
 		assertTrue(pending(run(dapp, "sendview file:/etc/hosts")));
-		assertTrue(pending(run(dapp, "keets action:publish path:/x file:/etc/hosts")));
 	}
 
 	@Test

@@ -195,10 +195,14 @@ public class rpc extends Command {
 		rpcdets.put("port", GeneralParams.RPC_PORT);
 		rpcdets.put("ssl", GeneralParams.RPC_SSL);
 		
-		//Get the Public Key..
-		Certificate cert 	= SSLManager.getSSLKeyStore().getCertificate("MINIMA_NODE");
-		MiniData pubk 		= new MiniData(cert.getPublicKey().getEncoded());
-		rpcdets.put("sslpubkey",pubk.to0xString());
+		//Get the Public Key.. (no SSL keystore yet: say so, do not fail the whole reply after the RPC changed)
+		try {
+			Certificate cert 	= SSLManager.getSSLKeyStore().getCertificate("MINIMA_NODE");
+			MiniData pubk 		= new MiniData(cert.getPublicKey().getEncoded());
+			rpcdets.put("sslpubkey",pubk.to0xString());
+		}catch(Exception noKeystore) {
+			rpcdets.put("sslpubkey","unavailable");
+		}
 		
 		rpcdets.put("authenticate", GeneralParams.RPC_AUTHENTICATE);
 		rpcdets.put("username", "minima");
