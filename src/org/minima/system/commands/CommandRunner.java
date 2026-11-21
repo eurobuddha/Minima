@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 import org.minima.database.minidapps.MiniDAPP;
 import org.minima.system.Main;
+import org.minima.system.mds.MDSManager;
 import org.minima.system.commands.backup.archive;
 import org.minima.system.commands.backup.backup;
 import org.minima.system.commands.backup.decryptbackup;
@@ -371,7 +372,8 @@ public class CommandRunner {
 			boolean allowed = isCommandAllowed(comname);
 			
 			//Is this a MiniDAPP.. (an ADMIN call - 0x00 - never consults the MDS)
-			if(!zMiniDAPPID.equals("0x00") && zMiniDAPPID.equals(Main.getInstance().getMDSManager().getPublicMiniDAPPID())) {
+			MDSManager mds = Main.getInstance() == null ? null : Main.getInstance().getMDSManager();
+			if(!zMiniDAPPID.equals("0x00") && mds != null && zMiniDAPPID.equals(mds.getPublicMiniDAPPID())) {
 				
 				//Public MiniDAPPs cannot add to pending..
 				if(!allowed) {
@@ -392,8 +394,17 @@ public class CommandRunner {
 				
 				if(!allowed) {
 					
-					//Get the MiniDAPP
-					MiniDAPP md = Main.getInstance().getMDSManager().getMiniDAPP(zMiniDAPPID);
+					//Get the MiniDAPP - unknown callers (no MDS, or not an installed dapp) are refused outright
+					MiniDAPP md = mds == null ? null : mds.getMiniDAPP(zMiniDAPPID);
+					if(md == null) {
+						result=  new JSONObject();
+						result.put("command", command);
+						result.put("status", false);
+						result.put("pending", false);
+						result.put("error", "You need ADMIN privileges to run this command");
+						finalresult.add(result);
+						break;
+					}
 					
 					//Does it have WRITE permission..
 					if(!md.getPermission().equalsIgnoreCase("write")) {
