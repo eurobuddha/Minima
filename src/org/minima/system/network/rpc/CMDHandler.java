@@ -156,17 +156,19 @@ public class CMDHandler implements Runnable {
 			statfalse.put("status", false);
 			String result = statfalse.toJSONString();
 			try {
-				if(fileRequested.equals("quit")) {
-					quit=true;
-				}
-				
 				//MinimaLogger.log("RPC:"+fileRequested+" User:"+authuser.toString());
 				
-				//Now run this function..
+				//Now run this function.. a read user runs as the untrusted MiniDapp (no MiniDapp System: the
+				//non-admin id 0xFF), so its WRITE commands go pending / are refused
 				JSONArray res = null;
 				if(authuser.getString("mode").equals("read")) {
-					res = CommandRunner.getRunner().runMultiCommand(Main.getInstance().getMDSManager().getUntrustedMiniDAPPID(), fileRequested);
+					org.minima.system.mds.MDSManager mds = Main.getInstance() == null ? null : Main.getInstance().getMDSManager();
+					res = CommandRunner.getRunner().runMultiCommand(mds == null ? "0xFF" : mds.getUntrustedMiniDAPPID(), fileRequested);
 				}else if(authuser.getString("mode").equals("write")) {
+					//Only a command that really runs as ADMIN may stop the JVM (a read user's quit never runs)
+					if(fileRequested.equals("quit")) {
+						quit=true;
+					}
 					res = CommandRunner.getRunner().runMultiCommand(fileRequested);
 				}else {
 					throw new IllegalArgumentException("Invalid mode for RPC user : "+authuser.getString("mode"));
