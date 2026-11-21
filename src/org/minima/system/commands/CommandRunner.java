@@ -132,6 +132,7 @@ import org.minima.system.commands.txn.txnscript;
 import org.minima.system.commands.txn.txnsign;
 import org.minima.system.commands.txn.txnstate;
 import org.minima.system.commands.txn.txnview;
+import org.minima.system.mds.MDSManager;
 import org.minima.utils.MinimaLogger;
 import org.minima.utils.json.JSONArray;
 import org.minima.utils.json.JSONObject;
@@ -243,6 +244,7 @@ public class CommandRunner {
 			}
 		}
 		cmd.setMiniDAPPID("0x00");
+		cmd.setWriteAllowed(true);
 
 		//Same parameter check as a typed command
 		ArrayList<String> validparams = cmd.getValidParams();
@@ -370,8 +372,17 @@ public class CommandRunner {
 			//Check this MiniDAPP can make this call..
 			boolean allowed = isCommandAllowed(comname);
 			
+			//SECURITY (review 2026-11-21): some uses of an open command need WRITE rights (a file outside the
+			//base folder, txnpost burn:, keets file:, a postfrom over an existing row..) - gate them like WRITE
+			//commands: refused for unknown callers, pending for a READ MiniDapp, run for a WRITE MiniDapp
+			String writeuse = cmd.getWriteUse();
+			if(writeuse != null) {
+				allowed = false;
+			}
+			
 			//Is this a MiniDAPP..
-			if(zMiniDAPPID.equals(Main.getInstance().getMDSManager().getPublicMiniDAPPID())) {
+			MDSManager mds = Main.getInstance() == null ? null : Main.getInstance().getMDSManager();
+			if(mds != null && zMiniDAPPID.equals(mds.getPublicMiniDAPPID())) {
 				
 				//Public MiniDAPPs cannot add to pending..
 				if(!allowed) {
@@ -392,8 +403,17 @@ public class CommandRunner {
 				
 				if(!allowed) {
 					
-					//Get the MiniDAPP
-					MiniDAPP md = Main.getInstance().getMDSManager().getMiniDAPP(zMiniDAPPID);
+					//Get the MiniDAPP - unknown callers (no MDS, or not an installed dapp) are refused outright
+					MiniDAPP md = mds == null ? null : mds.getMiniDAPP(zMiniDAPPID);
+					if(md == null) {
+						result=  new JSONObject();
+						result.put("command", command);
+						result.put("status", false);
+						result.put("pending", false);
+						result.put("error", "You need ADMIN privileges to run this command"+(writeuse == null ? "" : " ("+writeuse+")"));
+						finalresult.add(result);
+						break;
+					}
 					
 					//Does it have WRITE permission..
 					if(!md.getPermission().equalsIgnoreCase("write")) {
@@ -417,6 +437,10 @@ public class CommandRunner {
 					}
 				}
 			}
+			
+			//Past the gate: may it use the node's keys and files (ADMIN, or a WRITE MiniDapp that got here
+			//with a WRITE command / use - every other caller left above)
+			cmd.setWriteAllowed(zMiniDAPPID.equals("0x00") || !allowed);
 			
 			try {
 				result = cmd.runCommand();
