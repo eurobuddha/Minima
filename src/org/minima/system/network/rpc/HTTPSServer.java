@@ -22,8 +22,16 @@ public abstract class HTTPSServer extends Server implements Runnable {
     
     SSLServerSocket mSSLServerSocket = null;
     
+    /** "" = every interface; else the one address to bind (the RPC uses GeneralParams.RPC_BIND_HOST) */
+    String mBindHost = "";
+    
     public HTTPSServer(int port){
+        this(port, "");
+    }
+    
+    public HTTPSServer(int port, String zBindHost){
         super(port);
+        mBindHost = zBindHost == null ? "" : zBindHost;
     	
         //Run it..
 		Thread tt = new Thread(this);
@@ -84,7 +92,11 @@ public abstract class HTTPSServer extends Server implements Runnable {
             SSLServerSocketFactory sslServerSocketFactory = sslContext.getServerSocketFactory();
              
             // Create server socket
-            mSSLServerSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(this.mPort);
+            if(mBindHost.isEmpty()) {
+            	mSSLServerSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(this.mPort);
+            }else {
+            	mSSLServerSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(this.mPort, 50, java.net.InetAddress.getByName(mBindHost));
+            }
              
             MinimaLogger.log("SSL server started on port "+mPort);
             while(!mShutdown){

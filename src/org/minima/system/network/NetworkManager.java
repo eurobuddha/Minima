@@ -221,7 +221,8 @@ public class NetworkManager {
 			if(GeneralParams.RPC_SSL) {
 				
 				//Start The RPC server
-				mRPCServer = new HTTPSServer(GeneralParams.RPC_PORT) {
+				//SECURITY (2026-11-21): loopback unless -rpcbind - it was every interface, an admin RPC on the LAN
+				mRPCServer = new HTTPSServer(GeneralParams.RPC_PORT, GeneralParams.RPC_BIND_HOST) {
 					
 					@Override
 					public Runnable getSocketHandler(SSLSocket zSocket) {
@@ -232,7 +233,7 @@ public class NetworkManager {
 			}else {
 				
 				//Start The RPC server
-				mRPCServer = new HTTPServer(GeneralParams.RPC_PORT) {
+				mRPCServer = new HTTPServer(GeneralParams.RPC_PORT, GeneralParams.RPC_BIND_HOST) {
 					
 					@Override
 					public Runnable getSocketHandler(Socket zSocket) {
