@@ -129,6 +129,9 @@ public abstract class HTTPSServer extends Server implements Runnable {
         } catch (Exception ex){
         	if(mSSLServerSocket == null) {
         		mStartError = "Cannot listen on "+(mBindHost.isEmpty() ? "*" : mBindHost)+":"+mPort+" - "+ex;
+        	}else {
+        		//the accept loop died: close the socket, so it is not reported as listening
+        		try { mSSLServerSocket.close(); } catch(IOException closing) {}
         	}
         	if(!mShutdown) {
         		MinimaLogger.log(ex);

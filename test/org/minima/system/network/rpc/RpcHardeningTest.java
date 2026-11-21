@@ -157,6 +157,36 @@ public class RpcHardeningTest {
 		}
 	}
 	
+	/** Round-6 review: an SSL server whose accept loop dies is not reported as listening (its socket is closed) */
+	@Test
+	public void deadSslAcceptLoopIsNotListening() throws Exception {
+		String olddata = GeneralParams.DATA_FOLDER;
+		java.io.File dir = java.nio.file.Files.createTempDirectory("rpc-ssl-dead").toFile();
+		GeneralParams.DATA_FOLDER = dir.getAbsolutePath();
+		MinimaDB.getDB().setAllowSaveState(false);
+		HTTPSServer server = null;
+		try {
+			org.minima.utils.ssl.SSLManager.makeKeyFile();
+			int port = freePort();
+			server = new HTTPSServer(port, "127.0.0.1") {
+				@Override
+				public Runnable getSocketHandler(javax.net.ssl.SSLSocket zSocket) {
+					throw new IllegalStateException("handler failed");
+				}
+			};
+			for(int i=0;i<50 && !server.isListening();i++) Thread.sleep(100);
+			assertTrue(server.isListening());
+			new Socket(InetAddress.getLoopbackAddress(), port).close();		//one accept: the handler throws
+			for(int i=0;i<50 && server.isListening();i++) Thread.sleep(100);
+			assertFalse("a dead accept loop is still reported as listening", server.isListening());
+		}finally {
+			if(server != null) server.shutdown();
+			GeneralParams.DATA_FOLDER = olddata;
+			MinimaDB.getDB().setAllowSaveState(true);
+			org.minima.utils.MiniFile.deleteFileOrFolder(dir.getAbsolutePath(), dir);
+		}
+	}
+	
 	/** One POST through a real CMDHandler on a loopback socket pair; returns the whole HTTP reply */
 	static String post(String zUser, String zPassword, String zCommand) throws Exception {
 		try(ServerSocket ss = new ServerSocket(0, 5, InetAddress.getLoopbackAddress());
