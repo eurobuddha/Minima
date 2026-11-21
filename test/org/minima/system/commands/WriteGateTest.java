@@ -43,4 +43,5 @@ public class WriteGateTest {
 		//ADMIN still runs it (it fails later here: no wallet in the test)
 		assertFalse(adminRefusal(run("0x00", "txnauto id:gatetxn2 amount:1 address:0x00")));
 	}
+	
 }
