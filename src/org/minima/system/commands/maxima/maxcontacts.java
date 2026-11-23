@@ -327,10 +327,10 @@ public class maxcontacts extends Command {
 			while(strtok.hasMoreTokens()) {
 				String contact = strtok.nextToken();
 				contact = contact.replaceAll(" ", "");
-				String command = "maxcontacts action:add contact:"+contact;
 				
-				JSONArray res 		= CommandRunner.getRunner().runMultiCommand(command);
-				JSONObject result 	= (JSONObject) res.get(0);
+				//SECURITY (2026-11-23): the contact as ONE parameter value - never command text, where a TAB or
+				//other white space started a parameter of its own
+				JSONObject result = CommandRunner.getRunner().runCommand("maxcontacts", "action", "add", "contact", contact);
 				resarray.add(result);
 			}
 			
