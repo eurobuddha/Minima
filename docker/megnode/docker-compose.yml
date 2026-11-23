@@ -30,6 +30,11 @@ services:
             #minima_desktop: true
             #You must have rpc enabled so MEG can communicate - do NOT open port 9005
             minima_rpcenable: "true"
+            #The RPC binds 127.0.0.1 by default - MEG is another container, so bind every interface (the port is not
+            #published). A password-less RPC runs only POSTs with the header X-Minima-Rpc as admin; or set a password
+            #here if your MEG version sends one
+            minima_rpcbind: "all"
+            #minima_rpcpassword: "CHANGE_THIS_PASSWORD"
             minima_solo: "true"
             #MDS is ENABLED by default in the container so you MUST set your MDS password to something good..
             minima_mdspassword: "123"
