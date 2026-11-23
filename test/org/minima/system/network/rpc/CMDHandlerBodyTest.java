@@ -77,4 +77,16 @@ public class CMDHandlerBodyTest {
 			org.minima.system.params.GeneralParams.RPC_ALLOWED_ORIGINS = "";
 		}
 	}
+	
+	@Test
+	public void sslRpcOwnOriginIsHttps() {
+		org.minima.system.params.GeneralParams.RPC_SSL = true;
+		try {
+			assertEquals(true, CMDHandler.browserAllowed("https://127.0.0.1:9005", "same-origin", "127.0.0.1:9005"));
+			assertEquals(false, CMDHandler.browserAllowed("http://127.0.0.1:9005", "same-origin", "127.0.0.1:9005"));
+		}finally {
+			org.minima.system.params.GeneralParams.RPC_SSL = false;
+		}
+		assertEquals(false, CMDHandler.browserAllowed("https://127.0.0.1:9005", "same-origin", "127.0.0.1:9005"));
+	}
 }

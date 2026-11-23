@@ -347,7 +347,8 @@ public class CMDHandler implements Runnable {
 					named = true;
 				}
 			}
-			boolean own = zHost != null && zOrigin.equalsIgnoreCase("http://"+zHost);
+			//the RPC's own origin - https:// when it serves SSL
+			boolean own = zHost != null && zOrigin.equalsIgnoreCase((GeneralParams.RPC_SSL ? "https://" : "http://")+zHost);
 			if(!named && !own) {
 				return false;
 			}
