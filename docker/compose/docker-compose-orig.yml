@@ -7,7 +7,7 @@ networks:
 services:
   minima_one:
     image: minimaglobal/minima:latest
-    command: -daemon -genesis -noconnect -test -port 9001 -rpc 9002 -rpcenable
+    command: -daemon -genesis -noconnect -test -port 9001 -rpc 9002 -rpcenable -rpcbind all -rpcpassword CHANGE_THIS_PASSWORD
     networks:
       minima_testnet:
         aliases:
