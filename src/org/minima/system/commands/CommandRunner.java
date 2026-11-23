@@ -510,6 +510,16 @@ public class CommandRunner {
 			//Check this MiniDAPP can make this call..
 			boolean allowed = isCommandAllowed(comname);
 			
+			//A non-ADMIN txnimport may only create a NEW row under an explicit id - never replace another caller's
+			//draft (TxnDB.addCompleteTransaction replaces an existing id), as for postfrom / signfrom
+			if(allowed && !zMiniDAPPID.equals("0x00") && comname.equals("txnimport")) {
+				Object idp = cmd.getParams().get("id");
+				String tid = idp == null ? "" : idp.toString().trim();
+				if(tid.isEmpty() || org.minima.database.MinimaDB.getDB().getCustomTxnDB().getTransactionRow(tid) != null) {
+					allowed = false;
+				}
+			}
+			
 			//Is this a MiniDAPP.. (an ADMIN call - 0x00 - never consults the MDS)
 			MDSManager mds = Main.getInstance() == null ? null : Main.getInstance().getMDSManager();
 			if(!zMiniDAPPID.equals("0x00") && mds != null && zMiniDAPPID.equals(mds.getPublicMiniDAPPID())) {
