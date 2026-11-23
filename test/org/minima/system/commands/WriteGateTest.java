@@ -30,6 +30,20 @@ public class WriteGateTest {
 		return (JSONObject) CommandRunner.getRunner().runMultiCommand(zUser, zCommand).get(0);
 	}
 	
+	/** The command itself, past the runner's gates, for a non-admin caller */
+	static JSONObject runPastGate(String zUser, String zCommand) throws Exception {
+		Command cmd = CommandRunner.getRunner().getCommand(zCommand);
+		cmd.setMiniDAPPID(zUser);
+		try {
+			return cmd.runCommand();
+		}catch(CommandException exc) {
+			JSONObject res = cmd.getJSONReply();
+			res.put("status", false);
+			res.put("error", exc.getMessage());
+			return res;
+		}
+	}
+	
 	static boolean adminRefusal(JSONObject zRes) {
 		return String.valueOf(zRes.get("error")).contains("ADMIN");
 	}
@@ -226,12 +240,13 @@ public class WriteGateTest {
 			assertTrue("a non-admin caller overwrote an existing file: "+res, String.valueOf(res.get("error")).contains("only creates new files"));
 			assertEquals("ADMIN", new String(java.nio.file.Files.readAllBytes(handle.toPath())));
 			
-			//a NEW plain name: created (txnexport, open on this line - peers publish needs a running network here)
+			//a NEW plain name: created (txnexport as an installed READ MiniDapp reaches it - the txn table is closed
+			//to 0xFF since 2026-11-23, and peers publish needs a running network here)
 			CommandRunner.getRunner().runMultiCommand("0x00", "txncreate id:retrytxn");
-			res = run("0xFF", "txnexport id:retrytxn file:mine-new.txn");
+			res = runPastGate("0xFF", "txnexport id:retrytxn file:mine-new.txn");
 			assertTrue(res.toString(), (boolean) res.get("status"));
 			assertTrue(new java.io.File(base, "mine-new.txn").length() > 0);
-			res = run("0xFF", "txnexport id:retrytxn file:ms_pay_0123.txn");
+			res = runPastGate("0xFF", "txnexport id:retrytxn file:ms_pay_0123.txn");
 			assertTrue("a non-admin caller overwrote an existing file: "+res, String.valueOf(res.get("error")).contains("only creates new files"));
 			assertEquals("ADMIN", new String(java.nio.file.Files.readAllBytes(handle.toPath())));
 			
