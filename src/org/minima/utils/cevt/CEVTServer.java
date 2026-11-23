@@ -2,6 +2,7 @@ package org.minima.utils.cevt;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -12,6 +13,7 @@ import org.minima.objects.base.MiniString;
 import org.minima.utils.MiniFormat;
 import org.minima.utils.MinimaLogger;
 import org.minima.utils.RPCClient;
+import org.minima.utils.bondserver.BondServer;
 import org.minima.utils.json.JSONArray;
 import org.minima.utils.json.JSONObject;
 import org.minima.utils.json.parser.JSONParser;
@@ -232,6 +234,13 @@ public class CEVTServer {
 		    		String dterminalid 	= getStateVar(coinobj, 1);
 		    		String userpubkey  	= getStateVar(coinobj, 2);
 		    		
+		    		//SECURITY (2026-11-23): the state is the sender's text and goes into commands - known shapes only
+		    		String invalid = invalidState(useraddress, dterminalid, userpubkey);
+		    		if(invalid != null) {
+		    			MinimaLogger.log("[INVALID] "+invalid+" in the state of coinid:"+coinid);
+		    			continue;
+		    		}
+		    		
 	    			MinimaLogger.log("[VALID] coinid:"+coinid+" coinage:"+coinage.toString()+" amount:"+tokenamount.toString()+" terminal:"+dterminalid);
 	    			
 	    			//OK - Send him back an NFT with required data
@@ -269,41 +278,42 @@ public class CEVTServer {
 
 		    		//Now construct the spend txn
 		    		String randid 	  = MiniData.getRandomData(32).to0xString();
-		    		String txnbuilder = "txncreate id:"+randid;
+		    		ArrayList<String> txnbuilder = new ArrayList<>();
+		    		txnbuilder.add("txncreate id:"+randid);
 		    		
 		    		//Set the inputs - the 1 we send and the kj coins we send back to ourselves..
-		    		txnbuilder 		 += ";txninput id:"+randid+" coinid:"+ourcoinid;
-		    		txnbuilder 		 += ";txninput id:"+randid+" coinid:"+coinid;
+		    		txnbuilder.add("txninput id:"+randid+" coinid:"+ourcoinid);
+		    		txnbuilder.add("txninput id:"+randid+" coinid:"+coinid);
 		    		
 		    		//Send the user his funds..
-		    		txnbuilder 		 += ";txnoutput id:"+randid+" amount:1 address:"+useraddress+" tokenid:"+KJ_RECEIPT_TOKENID;
+		    		txnbuilder.add("txnoutput id:"+randid+" amount:1 address:"+useraddress+" tokenid:"+KJ_RECEIPT_TOKENID);
 		    		
 		    		//Send us back the coins - to a different address
-		    		txnbuilder 		 += ";txnoutput id:"+randid+" amount:"+tokenamount+" address:"+CEVT_CHANGE_ADDRESS+" tokenid:"+KJ_TOKENID;
+		    		txnbuilder.add("txnoutput id:"+randid+" amount:"+tokenamount+" address:"+CEVT_CHANGE_ADDRESS+" tokenid:"+KJ_TOKENID);
 		    		
 		    		//Is there any change
 		    		if(ourchange.isMore(MiniNumber.ZERO)) {
-		    			txnbuilder 	 += ";txnoutput id:"+randid+" amount:"+ourchange+" address:"+CEVT_CHANGE_ADDRESS+" tokenid:"+KJ_RECEIPT_TOKENID+" storestate:false";
+		    			txnbuilder.add("txnoutput id:"+randid+" amount:"+ourchange+" address:"+CEVT_CHANGE_ADDRESS+" tokenid:"+KJ_RECEIPT_TOKENID+" storestate:false");
 		    		}
 		    		
 		    		//Now add ther FC statevars..
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:0 value:"+dterminalid;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:1 value:"+userpubkey;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:2 value:"+tokenamount;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:3 value:"+coinid;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:4 value:"+hash;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:5 value:"+signature;
+		    		txnbuilder.add("txnstate id:"+randid+" port:0 value:"+dterminalid);
+		    		txnbuilder.add("txnstate id:"+randid+" port:1 value:"+userpubkey);
+		    		txnbuilder.add("txnstate id:"+randid+" port:2 value:"+tokenamount);
+		    		txnbuilder.add("txnstate id:"+randid+" port:3 value:"+coinid);
+		    		txnbuilder.add("txnstate id:"+randid+" port:4 value:"+hash);
+		    		txnbuilder.add("txnstate id:"+randid+" port:5 value:"+signature);
 		    		
 		    		//Now sign and post! the txn..
-		    		txnbuilder 		 += ";txnsign id:"+randid+" publickey:auto txnpostauto:true txnpostmine:true";
+		    		txnbuilder.add("txnsign id:"+randid+" publickey:auto txnpostauto:true txnpostmine:true");
 		    		
 		    		//And finally delete
-		    		txnbuilder 		 += ";txndelete id:"+randid;
+		    		txnbuilder.add("txndelete id:"+randid);
 		    		
-		    		MinimaLogger.log(txnbuilder);
+		    		MinimaLogger.log(txnbuilder.toString());
 		    		
-		    		//Run it..
-		    		JSONArray res = runMultiCommand(txnbuilder);
+		    		//Run it.. one command per request
+		    		JSONArray res = runTxnCommands(randid, txnbuilder);
 		    		
 		    		//Was it a success
 		    		int arraylen 		= res.size();
@@ -348,23 +358,45 @@ public class CEVTServer {
     	return json;
 	}
 	
-	public static JSONArray runMultiCommand(String zCommand) throws IOException, ParseException {
-		
-		//URLEncode..
-    	String input 	= URLEncoder.encode(zCommand, MiniString.MINIMA_CHARSET);
-		String full 	= mHost+input;
-		
-		//Now run this function..
-		String result = null;
-    	if(mSSL) {
-    		result = RPCClient.sendGETBasicAuthSSL(full, "minima", mPassword, mSSLContext);
-		}else{
-    		result = RPCClient.sendGETBasicAuth(full,"minima",mPassword);
-    	}
-    	
-    	JSONArray json = (JSONArray) new JSONParser().parse(result);
-    	
-    	return json;
+	/**
+	 * SECURITY (2026-11-23): a transaction's commands one per RPC request - never a ';' chain, so no text in
+	 * one can start another. Stops at the first failure and deletes the row; the replies as the chain gave them.
+	 */
+	public static JSONArray runTxnCommands(String zTxnID, ArrayList<String> zCommands) throws IOException, ParseException {
+		JSONArray res = new JSONArray();
+		boolean done  = false;
+		try {
+			for(String command : zCommands) {
+				JSONObject reply = runSingleCommand(command);
+				res.add(reply);
+				if(!Boolean.TRUE.equals(reply.get("status"))) {
+					return res;
+				}
+			}
+			done = true;
+		}finally {
+			if(!done) {
+				runSingleCommand("txndelete id:"+zTxnID);
+			}
+		}
+		return res;
+	}
+	
+	/**
+	 * SECURITY (2026-11-23): a request coin's state is written by its sender and is put into commands - only an
+	 * address (see BondServer.isAddress), a plain terminal id and a hex public key; null if all are valid.
+	 */
+	public static String invalidState(String zAddress, String zTerminalID, String zPublicKey) {
+		if(!BondServer.isAddress(zAddress)) {
+			return "address";
+		}
+		if(zTerminalID == null || !zTerminalID.matches("[0-9A-Za-z_.-]{1,128}")) {
+			return "terminal id";
+		}
+		if(zPublicKey == null || !zPublicKey.matches("0x[0-9A-Fa-f]{2,4096}")) {
+			return "public key";
+		}
+		return null;
 	}
 	
 	public static JSONObject getCoin(JSONArray zSpendableCoins, MiniNumber zAmount) {

@@ -3,11 +3,13 @@ package org.minima.utils.bondserver;
 import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Hashtable;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 
+import org.minima.objects.Address;
 import org.minima.objects.base.MiniData;
 import org.minima.objects.base.MiniNumber;
 import org.minima.objects.base.MiniString;
@@ -263,6 +265,12 @@ public class BondServer {
 		    			MinimaLogger.log("INAVLID RATE NULL Coin: "+i+" amount:"+coinamount+" coinid:"+coinid+" coinage:"+coinage.toString());
 		    			continue;
 		    		}
+		    		
+		    		//SECURITY (2026-11-23): the state is the sender's text - only a rate from our own table goes on
+		    		if(!bondrates.containsKey(rate)) {
+		    			MinimaLogger.log("Invalid Rate amount! @ coindid:"+coinid);
+		    			continue;
+		    		}
 		    		MiniNumber ratenum 	= new MiniNumber(rate).sub(MiniNumber.ONE);
 		    		
 		    		//Check amount
@@ -294,6 +302,12 @@ public class BondServer {
 		    		String useraddress			= getStateVar(coinobj, 102);
 		    		if(useraddress == null) {
 		    			MinimaLogger.log("INAVLID USER ADDRESS NULL Coin: "+i+" amount:"+coinamount+" coinid:"+coinid+" coinage:"+coinage.toString());
+		    			continue;
+		    		}
+		    		
+		    		//SECURITY (2026-11-23): it goes into a txnstate command - an address and nothing else
+		    		if(!isAddress(useraddress)) {
+		    			MinimaLogger.log("INVALID USER ADDRESS Coin: "+i+" amount:"+coinamount+" coinid:"+coinid);
 		    			continue;
 		    		}
 		    		
@@ -356,35 +370,36 @@ public class BondServer {
 		    		
 		    		//Now construct the spend txn
 		    		String randid 	  = MiniData.getRandomData(32).to0xString();
-		    		String txnbuilder = "txncreate id:"+randid;
+		    		ArrayList<String> txnbuilder = new ArrayList<>();
+		    		txnbuilder.add("txncreate id:"+randid);
 		    		
 		    		//Set the inputs
-		    		txnbuilder 		 += ";txninput id:"+randid+" coinid:"+coinid;
-		    		txnbuilder 		 += ";txninput id:"+randid+" coinid:"+ourcoinid;
+		    		txnbuilder.add("txninput id:"+randid+" coinid:"+coinid);
+		    		txnbuilder.add("txninput id:"+randid+" coinid:"+ourcoinid);
 		    		
 		    		//Send the user his funds..
-		    		txnbuilder 		 += ";txnoutput id:"+randid+" amount:"+totaltouser+" address:"+fcaddress+" tokenid:0x00";
+		    		txnbuilder.add("txnoutput id:"+randid+" amount:"+totaltouser+" address:"+fcaddress+" tokenid:0x00");
 		    		
 		    		//Is there any change
 		    		if(ourchange.isMore(MiniNumber.ZERO)) {
-		    			txnbuilder 	 += ";txnoutput id:"+randid+" amount:"+ourchange+" address:"+ouraddress+" tokenid:0x00 storestate:false";
+		    			txnbuilder.add("txnoutput id:"+randid+" amount:"+ourchange+" address:"+ouraddress+" tokenid:0x00 storestate:false");
 		    		}
 		    		
 		    		//Now add ther FC statevars..
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:1 value:"+fcblock;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:2 value:"+fcusercaddress;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:3 value:"+fcmillitime;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:4 value:"+fccoinage;
-		    		txnbuilder 		 += ";txnstate id:"+randid+" port:5 value:"+rate;
+		    		txnbuilder.add("txnstate id:"+randid+" port:1 value:"+fcblock);
+		    		txnbuilder.add("txnstate id:"+randid+" port:2 value:"+fcusercaddress);
+		    		txnbuilder.add("txnstate id:"+randid+" port:3 value:"+fcmillitime);
+		    		txnbuilder.add("txnstate id:"+randid+" port:4 value:"+fccoinage);
+		    		txnbuilder.add("txnstate id:"+randid+" port:5 value:"+rate);
 		    		
 		    		//Now sign and post! the txn..
-		    		txnbuilder 		 += ";txnsign id:"+randid+" publickey:auto txnpostauto:true txnpostmine:true";
+		    		txnbuilder.add("txnsign id:"+randid+" publickey:auto txnpostauto:true txnpostmine:true");
 		    		
 		    		//And finally delete
-		    		txnbuilder 		 += ";txndelete id:"+randid;
+		    		txnbuilder.add("txndelete id:"+randid);
 		    		
-		    		//Run it..
-		    		JSONArray res = runMultiCommand(txnbuilder);
+		    		//Run it.. one command per request
+		    		JSONArray res = runTxnCommands(randid, txnbuilder);
 		    		
 		    		//Was it a success
 		    		int arraylen 		= res.size();
@@ -429,23 +444,49 @@ public class BondServer {
     	return json;
 	}
 	
-	public static JSONArray runMultiCommand(String zCommand) throws IOException, ParseException {
-		
-		//URLEncode..
-    	String input 	= URLEncoder.encode(zCommand, MiniString.MINIMA_CHARSET);
-		String full 	= mHost+input;
-		
-		//Now run this function..
-		String result = null;
-    	if(mSSL) {
-    		result = RPCClient.sendGETBasicAuthSSL(full, "minima", mPassword, mSSLContext);
-		}else{
-    		result = RPCClient.sendGETBasicAuth(full,"minima",mPassword);
-    	}
-    	
-    	JSONArray json = (JSONArray) new JSONParser().parse(result);
-    	
-    	return json;
+	/**
+	 * SECURITY (2026-11-23): a transaction's commands one per RPC request - never a ';' chain, so no text in
+	 * one can start another. Stops at the first failure and deletes the row; the replies as the chain gave them.
+	 */
+	public static JSONArray runTxnCommands(String zTxnID, ArrayList<String> zCommands) throws IOException, ParseException {
+		JSONArray res = new JSONArray();
+		boolean done  = false;
+		try {
+			for(String command : zCommands) {
+				JSONObject reply = runSingleCommand(command);
+				res.add(reply);
+				if(!Boolean.TRUE.equals(reply.get("status"))) {
+					return res;
+				}
+			}
+			done = true;
+		}finally {
+			if(!done) {
+				runSingleCommand("txndelete id:"+zTxnID);
+			}
+		}
+		return res;
+	}
+	
+	/**
+	 * SECURITY (2026-11-23): a coin's state is written by whoever made the coin. An address read from it is used
+	 * only in one of the two forms of an address: 0x + 64 hex, or an Mx address of 32 bytes with a good checksum.
+	 */
+	public static boolean isAddress(String zValue) {
+		if(zValue == null) {
+			return false;
+		}
+		if(zValue.matches("0x[0-9a-fA-F]{64}")) {
+			return true;
+		}
+		if(!zValue.matches("Mx[0-9A-Za-z]{20,100}")) {
+			return false;
+		}
+		try {
+			return Address.convertMinimaAddress(zValue).getLength() == 32;
+		}catch(Exception exc) {
+			return false;
+		}
 	}
 	
 	public static JSONObject getCoin(JSONArray zSpendableCoins, MiniNumber zAmount) {
